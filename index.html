@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>シマエナガジャンプ</title>
+<style>
+*{
+    box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
+}
+html,body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    touch-action:none;
+    font-family:sans-serif;
+    background:#cfefff;
+}
+.screen{
+    width:100%;
+    height:100vh;
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    text-align:center;
+}
+.screen.active{
+    display:flex;
+}
+h1{
+    margin:10px 0;
+}
+button{
+    border:none;
+    border-radius:14px;
+    background:#2f8cff;
+    color:#fff;
+    font-size:20px;
+    padding:16px 28px;
+    min-width:160px;
+}
+#gameScreen{
+    justify-content:flex-start;
+    padding:0;
+}
+#hud{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    padding:10px;
+    background:#ffffffcc;
+    font-weight:bold;
+    font-size:18px;
+}
+#gameArea{
+    position:relative;
+    width:100%;
+    flex:1;
+    overflow:hidden;
+    background:linear-gradient(#9be3ff,#e9fbff);
+}
+#ground{
+    position:absolute;
+    left:0;
+    bottom:0;
+    width:100%;
+    height:70px;
+    background:#77c25d;
+}
+#player{
+    position:absolute;
+    left:50px;
+    bottom:70px;
+    width:60px;
+    height:60px;
+    font-size:48px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+.obstacle,.enemy,.attack{
+    position:absolute;
+}
+.obstacle{
+    font-size:42px;
+}
+.enemy{
+    font-size:42px;
+}
+.attack{
+    font-size:32px;
+}
+#controls{
+    width:100%;
+    display:flex;
+    gap:10px;
+    padding:10px;
+    background:#ffffffdd;
+}
+.ctrlBtn{
+    flex:1;
+    font-size:24px;
+    height:72px;
+}
+#rank{
+    font-size:32px;
+    font-weight:bold;
+    color:#ff7a00;
+}
+</style>
+</head>
+<body>
+
+<div id="startScreen" class="screen active">
+    <h1>🐦 シマエナガジャンプ</h1>
+    <p>
+        ジャンプで木の枝をよけよう！<br>
+        茶色いきのこは攻撃ボタンでやっつけよう！<br>
+        制限時間は60秒！
+    </p>
+    <button id="startBtn">スタート</button>
+</div>
+
+<div id="gameScreen" class="screen">
+    <div id="hud">
+        <div>スコア: <span id="score">0</span></div>
+        <div>残り: <span id="time">60</span>秒</div>
+    </div>
+
+    <div id="gameArea">
+        <div id="player">🐦</div>
+        <div id="ground"></div>
+    </div>
+
+    <div id="controls">
+        <button class="ctrlBtn" id="jumpBtn">⬆ ジャンプ</button>
+        <button class="ctrlBtn" id="attackBtn">✨ 攻撃</button>
+    </div>
+</div>
+
+<div id="resultScreen" class="screen">
+    <h1>結果発表</h1>
+    <h2>最終スコア: <span id="finalScore">0</span></h2>
+    <div id="rank">C</div>
+    <br>
+    <button id="restartBtn">もう一度遊ぶ</button>
+</div>
+
+<script>
+const startScreen=document.getElementById("startScreen");
+const gameScreen=document.getElementById("gameScreen");
+const resultScreen=document.getElementById("resultScreen");
+
+const gameArea=document.getElementById("gameArea");
+const player=document.getElementById("player");
+
+const scoreEl=document.getElementById("score");
+const timeEl=document.getElementById("time");
+const finalScoreEl=document.getElementById("finalScore");
+const rankEl=document.getElementById("rank");
+
+let score=0;
+let timeLeft=60;
+let playing=false;
+
+let playerY=0;
+let velocity=0;
+let jumping=false;
+
+let objects=[];
+let attacks=[];
+
+let gameLoop;
+let spawnLoop;
+let timerLoop;
+
+const gravity=0.9;
+const jumpPower=15;
+const groundY=70;
+
+function showScreen(screen){
+    startScreen.classList.remove("active");
+    gameScreen.classList.remove("active");
+    resultScreen.classList.remove("active");
+    screen.classList.add("active");
+}
+
+function startGame(){
+    score=0;
+    timeLeft=60;
+    scoreEl.textContent=score;
+    timeEl.textContent=timeLeft;
+
+    objects.forEach(o=>o.el.remove());
+    attacks.forEach(a=>a.el.remove());
+    objects=[];
+    attacks=[];
+
+    playerY=0;
+    velocity=0;
+    jumping=false;
+    player.style.bottom=(groundY+playerY)+"px";
+
+    showScreen(gameScreen);
+    playing=true;
+
+    gameLoop=setInterval(update,16);
+
+    spawnLoop=setInterval(()=>{
+        spawnObject();
+    },1300);
+
+    timerLoop=setInterval(()=>{
+        timeLeft--;
+        timeEl.textContent=timeLeft;
+
+        if(timeLeft<=0){
+            endGame();
+        }
+    },1000);
+}
+
+function jump(){
+    if(!playing) return;
+    if(!jumping){
+        jumping=true;
+        velocity=jumpPower;
+    }
+}
+
+function attack(){
+    if(!playing) return;
+
+    const el=document.createElement("div");
+    el.className="attack";
+    el.textContent="⭐";
+    gameArea.appendChild(el);
+
+    attacks.push({
+        el:el,
+        x:95,
+        y:playerY+90
+    });
+}
+
+function spawnObject(){
+    if(!playing) return;
+
+    const type=Math.random()<0.55?"obstacle":"enemy";
+
+    const el=document.createElement("div");
+    el.className=type;
+
+    if(type==="obstacle"){
+        el.textContent="🌿";
+    }else{
+        el.textContent="🍄";
+    }
+
+    gameArea.appendChild(el);
+
+    objects.push({
+        type:type,
+        el:el,
+        x:gameArea.clientWidth,
+        hit:false
+    });
+}
+
+function rectsOverlap(a,b){
+    return !(
+        a.right<b.left ||
+        a.left>b.right ||
+        a.bottom<b.top ||
+        a.top>b.bottom
+    );
+}
+
+function update(){
+
+    velocity-=gravity;
+    playerY+=velocity;
+
+    if(playerY<=0){
+        playerY=0;
+        velocity=0;
+        jumping=false;
+    }
+
+    player.style.bottom=(groundY+playerY)+"px";
+
+    const playerRect=player.getBoundingClientRect();
+
+    for(let i=objects.length-1;i>=0;i--){
+        const obj=objects[i];
+
+        obj.x-=6;
+
+        obj.el.style.left=obj.x+"px";
+        obj.el.style.bottom=(obj.type==="obstacle"?70:72)+"px";
+
+        const objRect=obj.el.getBoundingClientRect();
+
+        if(rectsOverlap(playerRect,objRect)){
+            if(obj.type==="obstacle"){
+                endGame();
+                return;
+            }else{
+                endGame();
+                return;
+            }
+        }
+
+        if(obj.x<-80){
+            if(obj.type==="obstacle"){
+                score+=10;
+            }else{
+                score+=15;
+            }
+            scoreEl.textContent=score;
+
+            obj.el.remove();
+            objects.splice(i,1);
+        }
+    }
+
+    for(let i=attacks.length-1;i>=0;i--){
+        const atk=attacks[i];
+
+        atk.x+=12;
+
+        atk.el.style.left=atk.x+"px";
+        atk.el.style.bottom=atk.y+"px";
+
+        const atkRect=atk.el.getBoundingClientRect();
+
+        for(let j=objects.length-1;j>=0;j--){
+            const obj=objects[j];
+
+            if(obj.type!=="enemy") continue;
+
+            const objRect=obj.el.getBoundingClientRect();
+
+            if(rectsOverlap(atkRect,objRect)){
+                score+=30;
+                scoreEl.textContent=score;
+
+                obj.el.remove();
+                objects.splice(j,1);
+
+                atk.el.remove();
+                attacks.splice(i,1);
+                break;
+            }
+        }
+
+        if(i<attacks.length){
+            const a=attacks[i];
+            if(a && a.x>gameArea.clientWidth+100){
+                a.el.remove();
+                attacks.splice(i,1);
+            }
+        }
+    }
+}
+
+function endGame(){
+    if(!playing) return;
+
+    playing=false;
+
+    clearInterval(gameLoop);
+    clearInterval(spawnLoop);
+    clearInterval(timerLoop);
+
+    finalScoreEl.textContent=score;
+
+    let rank="C";
+    if(score>=700) rank="S";
+    else if(score>=500) rank="A";
+    else if(score>=300) rank="B";
+
+    rankEl.textContent="ランク "+rank;
+
+    showScreen(resultScreen);
+}
+
+document.getElementById("startBtn").addEventListener("click",startGame);
+document.getElementById("restartBtn").addEventListener("click",startGame);
+
+document.getElementById("jumpBtn").addEventListener("pointerdown",jump);
+document.getElementById("attackBtn").addEventListener("pointerdown",attack);
+
+gameArea.addEventListener("pointerdown",(e)=>{
+    if(e.clientX<window.innerWidth/2){
+        jump();
+    }else{
+        attack();
+    }
+});
+</script>
+
+</body>
+</html>
